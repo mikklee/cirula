@@ -48,10 +48,15 @@ mod history;
 use history::*;
 
 mod theme;
-use theme::*;
+use theme::{
+    app_row_container, extra_text_color, get_theme_with_custom, rounded_text_input_style,
+    scrollable_style,
+};
 
 static INPUT_ID: OnceLock<iced::widget::Id> = OnceLock::new();
 static SCROLL_ID: OnceLock<iced::widget::Id> = OnceLock::new();
+static CONFIG: OnceLock<Config> = OnceLock::new();
+static THEME: OnceLock<iced::Theme> = OnceLock::new();
 
 fn get_input_id() -> iced::widget::Id {
     INPUT_ID.get_or_init(iced::widget::Id::unique).clone()
@@ -59,6 +64,17 @@ fn get_input_id() -> iced::widget::Id {
 
 fn get_scroll_id() -> iced::widget::Id {
     SCROLL_ID.get_or_init(iced::widget::Id::unique).clone()
+}
+
+fn get_config() -> &'static Config {
+    CONFIG.get_or_init(Config::load)
+}
+
+fn get_theme() -> &'static iced::Theme {
+    THEME.get_or_init(|| {
+        let config = get_config();
+        get_theme_with_custom(&config.app_theme, &config.custom_palette)
+    })
 }
 
 fn scroll_to_selected(selected: usize) -> Task<Message> {
@@ -85,7 +101,7 @@ fn main() -> Result<(), iced_layershell::Error> {
 
     set_locale(LC_ALL, "");
 
-    let config = Config::load();
+    let config = get_config();
 
     // Calculate size based on config
     let width = if config.width > 0 {
@@ -117,6 +133,7 @@ fn main() -> Result<(), iced_layershell::Error> {
     application(Launcher::new, namespace, update, view)
         .subscription(subscription)
         .style(style)
+        .theme(theme)
         .settings(Settings {
             layer_settings: LayerShellSettings {
                 size: Some((width, height)),
@@ -160,11 +177,21 @@ fn subscription(_state: &Launcher) -> Subscription<Message> {
     })
 }
 
-fn style(_state: &Launcher, theme: &iced::Theme) -> iced::theme::Style {
+fn style(_state: &Launcher, _theme: &iced::Theme) -> iced::theme::Style {
+    let palette = get_theme().palette();
     iced::theme::Style {
-        background_color: iced::Color::from_rgba(0.08, 0.08, 0.12, 0.95),
-        text_color: theme.palette().text,
+        background_color: iced::Color::from_rgba(
+            palette.background.r,
+            palette.background.g,
+            palette.background.b,
+            0.95,
+        ),
+        text_color: palette.text,
     }
+}
+
+fn theme(_state: &Launcher) -> iced::Theme {
+    get_theme().clone()
 }
 
 #[to_layer_message]
@@ -189,16 +216,15 @@ struct Launcher {
     filtered_indices: Vec<usize>,
     selected: usize,
     matcher: SkimMatcherV2,
-    config: Config,
     history: HashMap<String, HistoryData>,
     icon_cache: HashMap<usize, CachedIcon>, // index -> cached icon handle
 }
 
 impl Launcher {
     fn new() -> (Self, Task<Message>) {
-        let config = Config::load();
+        let config = get_config();
         let history = load_history(config.prune_history);
-        let entries = load_entries(&config, &history);
+        let entries = load_entries(config, &history);
         let filtered_indices: Vec<usize> = (0..entries.len()).collect();
 
         // Pre-cache all icon handles
@@ -222,7 +248,6 @@ impl Launcher {
                 filtered_indices,
                 selected: 0,
                 matcher: SkimMatcherV2::default(),
-                config,
                 history,
                 icon_cache,
             },
@@ -237,7 +262,7 @@ fn update(state: &mut Launcher, message: Message) -> Task<Message> {
             state.query = query.clone();
 
             // Check if it's a command
-            if is_cmd(&state.query, &state.config.command_prefix) {
+            if is_cmd(&state.query, &get_config().command_prefix) {
                 // In command mode, hide all entries
                 for entry in &mut state.entries {
                     entry.hide();
@@ -266,8 +291,8 @@ fn update(state: &mut Launcher, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::Submit => {
-            if is_cmd(&state.query, &state.config.command_prefix) {
-                let cmd_line = &state.query[state.config.command_prefix.len()..].trim();
+            if is_cmd(&state.query, &get_config().command_prefix) {
+                let cmd_line = &state.query[get_config().command_prefix.len()..].trim();
                 launch_cmd(cmd_line);
                 return iced::exit();
             }
@@ -278,8 +303,8 @@ fn update(state: &mut Launcher, message: Message) -> Task<Message> {
                     &entry.command_line,
                     entry.is_terminal,
                     &entry.id,
-                    state.config.term_command.as_deref(),
-                    state.config.cgroups,
+                    get_config().term_command.as_deref(),
+                    get_config().cgroups,
                 );
 
                 // Update history
@@ -327,8 +352,8 @@ fn update(state: &mut Launcher, message: Message) -> Task<Message> {
                     &entry.command_line,
                     entry.is_terminal,
                     &entry.id,
-                    state.config.term_command.as_deref(),
-                    state.config.cgroups,
+                    get_config().term_command.as_deref(),
+                    get_config().cgroups,
                 );
 
                 // Update history
@@ -355,11 +380,11 @@ fn view(state: &Launcher) -> Element<'_, Message> {
         .style(rounded_text_input_style);
 
     let entries_list: Element<'_, Message> = if state.filtered_indices.is_empty() {
-        if is_cmd(&state.query, &state.config.command_prefix) {
+        if is_cmd(&state.query, &get_config().command_prefix) {
             container(
                 text(format!(
                     "Run: {}",
-                    &state.query[state.config.command_prefix.len()..].trim()
+                    &state.query[get_config().command_prefix.len()..].trim()
                 ))
                 .size(16),
             )
@@ -369,7 +394,7 @@ fn view(state: &Launcher) -> Element<'_, Message> {
             container(text("No matches").size(16)).padding(20).into()
         }
     } else {
-        let icon_size = state.config.icon_size;
+        let icon_size = get_config().icon_size;
         let items: Vec<Element<'_, Message>> = state
             .filtered_indices
             .iter()
@@ -392,6 +417,7 @@ fn view(state: &Launcher) -> Element<'_, Message> {
         scrollable(Column::with_children(items).spacing(2).width(Length::Fill))
             .id(get_scroll_id())
             .height(Length::Fill)
+            .style(scrollable_style)
             .into()
     };
 
@@ -410,12 +436,13 @@ fn render_entry<'a>(
     icon_size: i32,
     cached_icon: Option<&'a CachedIcon>,
 ) -> Element<'a, Message> {
+    let theme = get_theme();
     let name_text = text(&entry.name).size(16);
 
     let mut content_col = Column::new().push(name_text);
 
     if let Some(ref extra) = entry.extra_text {
-        content_col = content_col.push(text(extra).size(12).color(extra_text_color()));
+        content_col = content_col.push(text(extra).size(12).color(extra_text_color(theme)));
     }
 
     let mut row_content = row![].spacing(12).padding(8).width(Length::Fill);
@@ -447,7 +474,7 @@ fn render_entry<'a>(
     iced::widget::mouse_area(
         container(row_content)
             .width(Length::Fill)
-            .style(move |_| app_row_container(is_selected)),
+            .style(move |_| app_row_container(theme, is_selected)),
     )
     .on_press(Message::Launch(idx))
     .into()

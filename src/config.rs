@@ -17,8 +17,82 @@ along with sirula.  If not, see <https://www.gnu.org/licenses/>.
 
 use super::consts::*;
 use super::util::get_config_file;
+use iced::Color;
 use serde::Deserialize;
 use std::collections::HashMap;
+use strum::{Display, EnumString};
+
+/// Parse a hex color string (supports #RGB, #RGBA, #RRGGBB, #RRGGBBAA)
+fn parse_hex_color(s: &str) -> Option<Color> {
+    let s = s.trim_start_matches('#');
+    match s.len() {
+        3 => {
+            // #RGB
+            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
+            Some(Color::from_rgb8(r, g, b))
+        }
+        4 => {
+            // #RGBA
+            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
+            let a = u8::from_str_radix(&s[3..4], 16).ok()? * 17;
+            Some(Color::from_rgba8(r, g, b, a as f32 / 255.0))
+        }
+        6 => {
+            // #RRGGBB
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            Some(Color::from_rgb8(r, g, b))
+        }
+        8 => {
+            // #RRGGBBAA
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+            Some(Color::from_rgba8(r, g, b, a as f32 / 255.0))
+        }
+        _ => None,
+    }
+}
+
+/// Custom palette configuration
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct CustomPalette {
+    pub background: Option<String>,
+    pub text: Option<String>,
+    pub primary: Option<String>,
+    pub success: Option<String>,
+    pub danger: Option<String>,
+    pub warning: Option<String>,
+}
+
+impl CustomPalette {
+    pub fn to_iced_palette(&self) -> Option<iced::theme::Palette> {
+        // All colors must be specified for a custom palette
+        Some(iced::theme::Palette {
+            background: parse_hex_color(self.background.as_ref()?)?,
+            text: parse_hex_color(self.text.as_ref()?)?,
+            primary: parse_hex_color(self.primary.as_ref()?)?,
+            success: parse_hex_color(self.success.as_ref()?)?,
+            danger: parse_hex_color(self.danger.as_ref()?)?,
+            warning: parse_hex_color(self.warning.as_ref()?)?,
+        })
+    }
+
+    pub fn is_defined(&self) -> bool {
+        self.background.is_some()
+            || self.text.is_some()
+            || self.primary.is_some()
+            || self.success.is_some()
+            || self.danger.is_some()
+            || self.warning.is_some()
+    }
+}
 
 macro_rules! make_config {
     ($name:ident { $($field:ident : $type:ty $( = ($default:expr) $field_str:literal )? ),* }) => {
@@ -41,7 +115,38 @@ pub enum Field {
     Commandline,
 }
 
+#[derive(Deserialize, Debug, Clone, Default, EnumString, Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum ThemeName {
+    Light,
+    Dark,
+    Dracula,
+    Nord,
+    SolarizedLight,
+    SolarizedDark,
+    GruvboxLight,
+    GruvboxDark,
+    CatppuccinLatte,
+    #[default]
+    CatppuccinFrappe,
+    CatppuccinMacchiato,
+    CatppuccinMocha,
+    TokyoNight,
+    TokyoNightStorm,
+    TokyoNightLight,
+    KanagawaWave,
+    KanagawaDragon,
+    KanagawaLotus,
+    Moonfly,
+    Nightfly,
+    Oxocarbon,
+    Ferra,
+}
+
 make_config!(Config {
+    app_theme: ThemeName = (ThemeName::default()) "app_theme",
+    custom_palette: CustomPalette = (CustomPalette::default()) "custom_palette",
     exclusive: bool = (true) "exclusive",
     frequent_first: bool = (false) "frequent_first",
     recent_first: bool = (true) "recent_first",
