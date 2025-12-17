@@ -41,6 +41,13 @@ pub fn is_cmd(text: &str, cmd_prefix: &str) -> bool {
     !cmd_prefix.is_empty() && text.starts_with(cmd_prefix)
 }
 
+// Spawned child is not awaited.
+// The zombie_processes lint warns about resource exhaustion in long-running applications:
+// https://github.com/rust-lang/rust-clippy/blob/master/clippy_lints/src/zombie_processes.rs
+// I believe, based on the man7 doc, that the process will be reaped by the system on Linux:
+// https://man7.org/linux/man-pages/man2/exit.2.html
+// I cannot confirm/deny whether this may have unforeseen consequences on Linux nor other systems.
+#[allow(clippy::zombie_processes)]
 pub fn launch_cmd(cmd_line: &str) {
     let parts: Vec<String> = Shlex::new(cmd_line).collect();
     if parts.is_empty() {
@@ -105,6 +112,13 @@ pub fn launch_app(
         command = command_new;
     }
 
+    // Spawned child is not awaited.
+    // The zombie_processes lint warns about resource exhaustion in long-running applications:
+    // https://github.com/rust-lang/rust-clippy/blob/master/clippy_lints/src/zombie_processes.rs
+    // I believe, based on the man7 doc, that the process will be reaped by the system on Linux:
+    // https://man7.org/linux/man-pages/man2/exit.2.html
+    // I cannot confirm/deny whether this may have unforeseen consequences on Linux nor other systems.
+    #[allow(clippy::zombie_processes)]
     if !command.is_empty() {
         Command::new(&command[0])
             .args(&command[1..])
