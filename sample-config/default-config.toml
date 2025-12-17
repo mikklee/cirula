@@ -3,6 +3,10 @@
 exclusive = true  # push all windows aside or appear above existing windows
 icon_size = 64  # icon size in pixels
 
+# locale for sorting in BCP-47 format (e.g., "en-US", "de", "sv", "nb-NO")
+# if not set, uses system locale from LC_COLLATE, LC_ALL, or LANG
+# locale = "en-US"
+
 # anchor window to screen edge
 anchor_left = false
 anchor_right = true

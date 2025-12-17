@@ -1,56 +1,95 @@
-/*
-Copyright (C) 2020 Dorian Rudolph
+use crate::get_config;
+use icu_collator::{Collator, CollatorBorrowed};
+use icu_locale::Locale;
+use std::cmp::Ordering;
+use std::sync::OnceLock;
 
-sirula is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+static COLLATOR: OnceLock<CollatorBorrowed<'static>> = OnceLock::new();
 
-sirula is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+/// Parse a POSIX locale string (e.g., "en_US.UTF-8") to ICU Locale format
+fn parse_posix_locale(locale_str: &str) -> Option<Locale> {
+    // Strip encoding suffix (e.g., ".UTF-8")
+    let locale_str = locale_str.split('.').next()?;
 
-You should have received a copy of the GNU General Public License
-along with sirula.  If not, see <https://www.gnu.org/licenses/>.
-*/
+    if locale_str.is_empty() {
+        return None;
+    }
 
-use libc::{setlocale, strcoll};
-pub use locale_types::{LocaleIdentifier};
-use std::{
-    cmp::{Ord, Ordering},
-    ffi::{CStr, CString},
-    os::raw::c_char,
-    ptr,
-};
+    // "C" and "POSIX" are special locales that use ASCII byte-order comparison.
+    // Fall back to ICU's default (DUCET) for sensible Unicode-aware sorting.
+    if locale_str == "C" || locale_str == "POSIX" {
+        return None;
+    }
+
+    // Convert POSIX format (en_US) to BCP-47/ICU format (en-US)
+    let locale_str = locale_str.replace('_', "-");
+
+    locale_str.parse().ok()
+}
+
+/// Get system locale from environment variables (LC_COLLATE, LC_ALL, or LANG)
+fn get_system_locale() -> Option<Locale> {
+    let locale_str = std::env::var("LC_COLLATE")
+        .or_else(|_| std::env::var("LC_ALL"))
+        .or_else(|_| std::env::var("LANG"))
+        .ok()?;
+
+    parse_posix_locale(&locale_str)
+}
+
+fn get_collator() -> &'static CollatorBorrowed<'static> {
+    COLLATOR.get_or_init(|| {
+        let locale = get_config().locale.clone().or_else(get_system_locale);
+        let prefs = locale.map(|l| l.into()).unwrap_or_default();
+        Collator::try_new(prefs, Default::default()).expect("Failed to create collator")
+    })
+}
 
 pub fn string_collate(a: &str, b: &str) -> Ordering {
-    // Note: Only works properly if locale is set to UTF-8
-    let ord = unsafe {
-        let c_a = CString::new(a).unwrap();
-        let c_b = CString::new(b).unwrap();
-        strcoll(c_a.as_ptr(), c_b.as_ptr())
-    };
-    ord.cmp(&0)
+    get_collator().compare(a, b)
 }
 
-unsafe fn setlocale_wrapper(category: i32, locale: *const c_char) -> Option<String> {
-    let ret = setlocale(category, locale);
-    if ret.is_null() {
-        None
-    } else {
-        Some(CStr::from_ptr(ret).to_str().unwrap().to_owned())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_posix_locale() {
+        // Standard POSIX format with encoding
+        assert_eq!(
+            parse_posix_locale("en_US.UTF-8"),
+            Some("en-US".parse().unwrap())
+        );
+        assert_eq!(
+            parse_posix_locale("de_DE.UTF-8"),
+            Some("de-DE".parse().unwrap())
+        );
+        assert_eq!(
+            parse_posix_locale("sv_SE.UTF-8"),
+            Some("sv-SE".parse().unwrap())
+        );
+        assert_eq!(
+            parse_posix_locale("nb_NO.UTF-8"),
+            Some("nb-NO".parse().unwrap())
+        );
     }
-}
 
-pub fn set_locale(category: i32, locale: &str) -> Option<String> {
-    unsafe {
-        let c_locale = CString::new(locale).unwrap();
-        setlocale_wrapper(category, c_locale.as_ptr())
+    #[test]
+    fn test_parse_posix_locale_without_encoding() {
+        assert_eq!(parse_posix_locale("en_US"), Some("en-US".parse().unwrap()));
+        assert_eq!(parse_posix_locale("de"), Some("de".parse().unwrap()));
     }
-}
 
-#[allow(unused)]
-pub fn get_locale(category: i32) -> Option<String> {
-    unsafe { setlocale_wrapper(category, ptr::null()) }
+    #[test]
+    fn test_parse_posix_locale_special() {
+        // C and POSIX should return None
+        assert_eq!(parse_posix_locale("C"), None);
+        assert_eq!(parse_posix_locale("POSIX"), None);
+        assert_eq!(parse_posix_locale("C.UTF-8"), None);
+    }
+
+    #[test]
+    fn test_parse_posix_locale_empty() {
+        assert_eq!(parse_posix_locale(""), None);
+    }
 }

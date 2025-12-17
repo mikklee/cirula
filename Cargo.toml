@@ -27,8 +27,8 @@ toml = "0.8"
 # Utilities
 xdg = "3.0"
 shlex = "1.3"
-libc = "0.2"
-locale-types = "0.4"
+icu_collator = "2"
+icu_locale = { version = "2", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 strum = { version = "0.27", features = ["derive"] }

@@ -23,7 +23,6 @@ use iced_layershell::build_pattern::application;
 use iced_layershell::reexport::{Anchor, KeyboardInteractivity, Layer};
 use iced_layershell::settings::{LayerShellSettings, Settings};
 use iced_layershell::to_layer_message;
-use libc::LC_ALL;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -42,7 +41,6 @@ mod app_entry;
 use app_entry::*;
 
 mod locale;
-use locale::*;
 
 mod history;
 use history::*;
@@ -98,8 +96,6 @@ fn main() -> Result<(), iced_layershell::Error> {
                 .add_directive("usvg=error".parse().unwrap()),
         )
         .init();
-
-    set_locale(LC_ALL, "");
 
     let config = get_config();
 

@@ -18,6 +18,7 @@ along with sirula.  If not, see <https://www.gnu.org/licenses/>.
 use super::consts::*;
 use super::util::get_config_file;
 use iced::Color;
+use icu_locale::Locale;
 use serde::Deserialize;
 use std::collections::HashMap;
 use strum::{Display, EnumString};
@@ -138,6 +139,7 @@ pub enum ThemeName {
 make_config!(Config {
     app_theme: ThemeName = (ThemeName::default()) "app_theme",
     custom_palette: CustomPalette = (CustomPalette::default()) "custom_palette",
+    locale: Option<Locale> = (None) "locale",
     exclusive: bool = (true) "exclusive",
     frequent_first: bool = (false) "frequent_first",
     recent_first: bool = (true) "recent_first",

@@ -77,6 +77,16 @@ danger = "#e64d66"
 warning = "#e6b34d"
 ```
 
+## Sorting locale
+
+You can override the sorting locale using the ICU format:
+
+```toml
+locale = "nb-NO"  # Norwegian bokmål: æ ø å sorted after z
+```
+
+If not set, uses system locale from `LC_COLLATE`, `LC_ALL`, or `LANG`.
+
 ## Differences from Sirula
 
 |               | Cirula | Sirula                            |
