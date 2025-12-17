@@ -15,9 +15,7 @@ You should have received a copy of the GNU General Public License
 along with sirula.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-pub const APP_ID: &str = "com.dorian.sirula";
-pub const APP_NAME: &str = "sirula";
+pub const APP_NAME: &str = "cirula";
 
-pub const STYLE_FILE: &str = "style.css";
 pub const CONFIG_FILE: &str = "config.toml";
 pub const HISTORY_FILE: &str = "history";

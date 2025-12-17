@@ -571,6 +571,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
+name = "cirula"
+version = "0.1.0"
+dependencies = [
+ "freedesktop_entry_parser",
+ "fuzzy-matcher",
+ "iced",
+ "iced_font_awesome",
+ "iced_layershell",
+ "libc",
+ "locale-types",
+ "regex",
+ "serde",
+ "shlex",
+ "strum",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "xdg",
+]
+
+[[package]]
 name = "clipboard-win"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3528,28 +3550,6 @@ name = "siphasher"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
-
-[[package]]
-name = "sirula"
-version = "2.0.0"
-dependencies = [
- "freedesktop_entry_parser",
- "fuzzy-matcher",
- "iced",
- "iced_font_awesome",
- "iced_layershell",
- "libc",
- "locale-types",
- "regex",
- "serde",
- "shlex",
- "strum",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
- "xdg",
-]
 
 [[package]]
 name = "skrifa"

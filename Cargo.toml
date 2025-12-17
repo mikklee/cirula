@@ -1,7 +1,7 @@
 [package]
-name = "sirula"
-version = "2.0.0"
-authors = ["Dorian Rudolph", "Jan Luca"]
+name = "cirula"
+version = "0.1.0"
+authors = ["Dorian Rudolph", "Jan Luca", "Michael Lee"]
 edition = "2021"
 
 [dependencies]

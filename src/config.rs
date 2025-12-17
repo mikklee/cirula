@@ -83,15 +83,6 @@ impl CustomPalette {
             warning: parse_hex_color(self.warning.as_ref()?)?,
         })
     }
-
-    pub fn is_defined(&self) -> bool {
-        self.background.is_some()
-            || self.text.is_some()
-            || self.primary.is_some()
-            || self.success.is_some()
-            || self.danger.is_some()
-            || self.warning.is_some()
-    }
 }
 
 macro_rules! make_config {
@@ -152,7 +143,6 @@ make_config!(Config {
     recent_first: bool = (true) "recent_first",
     prune_history: u32 = (0) "prune_history",
     icon_size: i32 = (64) "icon_size",
-    lines: i32 = (2) "lines",
     margin_left: i32 = (0) "margin_left",
     margin_right: i32 = (0) "margin_right",
     margin_top: i32 = (0) "margin_top",
@@ -171,8 +161,7 @@ make_config!(Config {
     cgroups: bool = (true) "cgroups",
     command_prefix: String = (":".into()) "command_prefix",
     exclude: Vec<String> = (Vec::new()) "exclude",
-    term_command: Option<String> = (None) "term_command",
-    close_on_unfocus: bool = (true) "close_on_unfocus"
+    term_command: Option<String> = (None) "term_command"
 });
 
 impl Config {
