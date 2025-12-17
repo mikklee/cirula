@@ -11,7 +11,7 @@ iced_layershell = "0.14"
 iced_font_awesome = "0.4"
 
 # Async runtime
-tokio = { version = "1", features = ["rt", "sync"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "fs"] }
 
 # App discovery
 freedesktop_entry_parser = "2.0"

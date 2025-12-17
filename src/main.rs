@@ -55,6 +55,7 @@ static INPUT_ID: OnceLock<iced::widget::Id> = OnceLock::new();
 static SCROLL_ID: OnceLock<iced::widget::Id> = OnceLock::new();
 static CONFIG: OnceLock<Config> = OnceLock::new();
 static THEME: OnceLock<iced::Theme> = OnceLock::new();
+static HISTORY: OnceLock<HashMap<String, HistoryData>> = OnceLock::new();
 
 fn get_input_id() -> iced::widget::Id {
     INPUT_ID.get_or_init(iced::widget::Id::unique).clone()
@@ -73,6 +74,10 @@ fn get_theme() -> &'static iced::Theme {
         let config = get_config();
         get_theme_with_custom(&config.app_theme, &config.custom_palette)
     })
+}
+
+fn get_history() -> &'static HashMap<String, HistoryData> {
+    HISTORY.get_or_init(|| load_history(get_config().prune_history))
 }
 
 fn scroll_to_selected(selected: usize) -> Task<Message> {
@@ -219,8 +224,13 @@ struct Launcher {
 impl Launcher {
     fn new() -> (Self, Task<Message>) {
         let config = get_config();
-        let history = load_history(config.prune_history);
-        let entries = load_entries(config, &history);
+        let history = get_history();
+
+        // Use tokio runtime for async parallel loading
+        let entries = tokio::runtime::Runtime::new()
+            .expect("Failed to create tokio runtime")
+            .block_on(app_entry::load_entries_async(config, history));
+
         let filtered_indices: Vec<usize> = (0..entries.len()).collect();
 
         // Pre-cache all icon handles
@@ -244,7 +254,7 @@ impl Launcher {
                 filtered_indices,
                 selected: 0,
                 matcher: SkimMatcherV2::default(),
-                history,
+                history: history.clone(),
                 icon_cache,
             },
             Task::done(Message::FocusInput),

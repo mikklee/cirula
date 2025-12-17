@@ -24,6 +24,7 @@ use regex::RegexSet;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tokio::task::JoinSet;
 use tracing::{debug, trace};
 
 use super::{Config, Field, HistoryData};
@@ -265,24 +266,128 @@ fn lookup_icon(icon_name: &str, _icon_size: i32) -> Option<PathBuf> {
     None
 }
 
-pub fn load_entries(config: &Config, history: &HashMap<String, HistoryData>) -> Vec<AppEntry> {
-    let mut entries = Vec::new();
+/// Parse a single .desktop file and return an AppEntry if valid
+fn parse_desktop_file(
+    path: PathBuf,
+    config: &Config,
+    history: &HashMap<String, HistoryData>,
+    exclude: &RegexSet,
+) -> Option<AppEntry> {
+    let entry = parse_entry(&path).ok()?;
+
+    // Skip if NoDisplay or Hidden
+    if get_attr(&entry, "NoDisplay").is_some_and(|v| v == "true") {
+        return None;
+    }
+    if get_attr(&entry, "Hidden").is_some_and(|v| v == "true") {
+        return None;
+    }
+
+    // Get app ID from filename
+    let id = path.file_name()?.to_str()?.to_string();
+
+    if id.is_empty() || exclude.is_match(&id) {
+        return None;
+    }
+
+    let name = get_attr(&entry, "Name")?;
+    let command_line = get_attr(&entry, "Exec")?;
+
+    let is_terminal = get_attr(&entry, "Terminal").is_some_and(|t| t == "true" || t == "1");
+    let icon_path =
+        get_attr(&entry, "Icon").and_then(|icon_name| lookup_icon(&icon_name, config.icon_size));
+
+    // Build display string
+    let (display_string, extra_text) = if let Some(override_name) =
+        get_id_field(&id, Field::Id).and_then(|app_id| config.name_overrides.get(&app_id))
+    {
+        let i = override_name.find('\r');
+        (
+            override_name.replace('\r', " "),
+            i.map(|idx| override_name[idx + 1..].to_string()),
+        )
+    } else {
+        let extra = config
+            .extra_field
+            .first()
+            .and_then(|f| get_app_field(&entry, *f).or_else(|| get_id_field(&id, *f)));
+        match extra {
+            Some(e)
+                if (!config.hide_extra_if_contained
+                    || !name.to_lowercase().contains(&e.to_lowercase())) =>
+            {
+                let separator = if config.extra_field_newline {
+                    "\n"
+                } else {
+                    " "
+                };
+                (format!("{}{}{}", name, separator, e), Some(e))
+            }
+            _ => (name.clone(), None),
+        }
+    };
+
+    let hidden = config
+        .hidden_fields
+        .iter()
+        .filter_map(|f| get_app_field(&entry, *f).or_else(|| get_id_field(&id, *f)))
+        .collect::<Vec<String>>()
+        .join(" ");
+
+    let search_string = if hidden.is_empty() {
+        display_string.clone()
+    } else {
+        format!("{} {}", display_string, hidden)
+    };
+
+    let history_data = history.get(&id).copied().unwrap_or_default();
+    let last_used = if config.recent_first {
+        history_data.last_used
+    } else {
+        0
+    };
+    let usage_count = if config.frequent_first {
+        history_data.usage_count
+    } else {
+        0
+    };
+
+    Some(AppEntry {
+        id,
+        name,
+        display_string,
+        search_string,
+        extra_text,
+        command_line,
+        icon_path,
+        is_terminal,
+        score: 100,
+        history: HistoryData {
+            last_used,
+            usage_count,
+        },
+    })
+}
+
+/// Async version of load_entries using tokio for parallel file discovery
+pub async fn load_entries_async(
+    config: &'static Config,
+    history: &'static HashMap<String, HistoryData>,
+) -> Vec<AppEntry> {
     let exclude = RegexSet::new(&config.exclude).expect("Invalid regex");
 
     // Find all .desktop files in XDG data directories
     let data_dirs = xdg::BaseDirectories::new();
     let mut desktop_files: Vec<PathBuf> = Vec::new();
 
-    // Search in applications directories
+    // Search in applications directories using tokio::fs
     for dir in data_dirs.get_data_dirs() {
         let apps_dir = dir.join("applications");
-        if apps_dir.exists() {
-            if let Ok(read_dir) = std::fs::read_dir(&apps_dir) {
-                for entry in read_dir.flatten() {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|e| e == "desktop") {
-                        desktop_files.push(path);
-                    }
+        if let Ok(mut read_dir) = tokio::fs::read_dir(&apps_dir).await {
+            while let Ok(Some(entry)) = read_dir.next_entry().await {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "desktop") {
+                    desktop_files.push(path);
                 }
             }
         }
@@ -291,133 +396,30 @@ pub fn load_entries(config: &Config, history: &HashMap<String, HistoryData>) -> 
     // Also check user's local applications
     if let Some(data_home) = data_dirs.get_data_home() {
         let local_apps = data_home.join("applications");
-        if local_apps.exists() {
-            if let Ok(read_dir) = std::fs::read_dir(&local_apps) {
-                for entry in read_dir.flatten() {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|e| e == "desktop") {
-                        desktop_files.push(path);
-                    }
+        if let Ok(mut read_dir) = tokio::fs::read_dir(&local_apps).await {
+            while let Ok(Some(entry)) = read_dir.next_entry().await {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "desktop") {
+                    desktop_files.push(path);
                 }
             }
         }
     }
 
+    // Parse all .desktop files in parallel using spawn_blocking for CPU-bound parsing
+    let mut join_set: JoinSet<Option<AppEntry>> = JoinSet::new();
+    let exclude = std::sync::Arc::new(exclude);
+
     for path in desktop_files {
-        let entry = match parse_entry(&path) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        let exclude = exclude.clone();
+        join_set.spawn_blocking(move || parse_desktop_file(path, config, history, &exclude));
+    }
 
-        // Skip if NoDisplay or Hidden
-        if get_attr(&entry, "NoDisplay").is_some_and(|v| v == "true") {
-            continue;
+    let mut entries = Vec::new();
+    while let Some(result) = join_set.join_next().await {
+        if let Ok(Some(entry)) = result {
+            entries.push(entry);
         }
-        if get_attr(&entry, "Hidden").is_some_and(|v| v == "true") {
-            continue;
-        }
-
-        // Get app ID from filename
-        let id = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        if id.is_empty() {
-            continue;
-        }
-
-        if exclude.is_match(&id) {
-            continue;
-        }
-
-        let name = match get_attr(&entry, "Name") {
-            Some(n) => n,
-            None => continue,
-        };
-
-        let command_line = match get_attr(&entry, "Exec") {
-            Some(e) => e,
-            None => continue,
-        };
-
-        let is_terminal = get_attr(&entry, "Terminal").is_some_and(|t| t == "true" || t == "1");
-        let icon_path = get_attr(&entry, "Icon").and_then(|icon_name| {
-            // Search XDG data dirs and common paths
-            lookup_icon(&icon_name, config.icon_size)
-        });
-
-        // Build display string
-        let (display_string, extra_text) = if let Some(override_name) =
-            get_id_field(&id, Field::Id).and_then(|app_id| config.name_overrides.get(&app_id))
-        {
-            let i = override_name.find('\r');
-            (
-                override_name.replace('\r', " "),
-                i.map(|idx| override_name[idx + 1..].to_string()),
-            )
-        } else {
-            let extra = config
-                .extra_field
-                .first()
-                .and_then(|f| get_app_field(&entry, *f).or_else(|| get_id_field(&id, *f)));
-            match extra {
-                Some(e)
-                    if (!config.hide_extra_if_contained
-                        || !name.to_lowercase().contains(&e.to_lowercase())) =>
-                {
-                    let separator = if config.extra_field_newline {
-                        "\n"
-                    } else {
-                        " "
-                    };
-                    (format!("{}{}{}", name, separator, e), Some(e))
-                }
-                _ => (name.clone(), None),
-            }
-        };
-
-        let hidden = config
-            .hidden_fields
-            .iter()
-            .filter_map(|f| get_app_field(&entry, *f).or_else(|| get_id_field(&id, *f)))
-            .collect::<Vec<String>>()
-            .join(" ");
-
-        let search_string = if hidden.is_empty() {
-            display_string.clone()
-        } else {
-            format!("{} {}", display_string, hidden)
-        };
-
-        let history_data = history.get(&id).copied().unwrap_or_default();
-        let last_used = if config.recent_first {
-            history_data.last_used
-        } else {
-            0
-        };
-        let usage_count = if config.frequent_first {
-            history_data.usage_count
-        } else {
-            0
-        };
-
-        entries.push(AppEntry {
-            id,
-            name,
-            display_string,
-            search_string,
-            extra_text,
-            command_line,
-            icon_path,
-            is_terminal,
-            score: 100,
-            history: HistoryData {
-                last_used,
-                usage_count,
-            },
-        });
     }
 
     entries.sort();
