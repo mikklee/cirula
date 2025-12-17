@@ -1,6 +1,4 @@
-markup_highlight = 'underline="low"'
 exclusive = true
-lines = 1
 icon_size = 32
 anchor_left = false
 anchor_right = false
@@ -13,3 +11,11 @@ margin_right = 0
 width = 400
 height = 800
 command_prefix = ":"
+
+[custom_palette]
+background = "#14141f"
+text = "#f2f2fa"
+primary = "#8066e6"
+success = "#4dcc99"
+danger = "#e64d66"
+warning = "#e6b34d"

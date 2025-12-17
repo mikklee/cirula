@@ -17,17 +17,80 @@ along with sirula.  If not, see <https://www.gnu.org/licenses/>.
 
 use super::consts::*;
 use super::util::get_config_file;
-use pango::Attribute;
-use serde::{de::Error, Deserializer};
-use serde_derive::Deserialize;
+use iced::Color;
+use icu_locale::Locale;
+use serde::Deserialize;
 use std::collections::HashMap;
+use strum::{Display, EnumString};
+
+/// Parse a hex color string (supports #RGB, #RGBA, #RRGGBB, #RRGGBBAA)
+fn parse_hex_color(s: &str) -> Option<Color> {
+    let s = s.trim_start_matches('#');
+    match s.len() {
+        3 => {
+            // #RGB
+            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
+            Some(Color::from_rgb8(r, g, b))
+        }
+        4 => {
+            // #RGBA
+            let r = u8::from_str_radix(&s[0..1], 16).ok()? * 17;
+            let g = u8::from_str_radix(&s[1..2], 16).ok()? * 17;
+            let b = u8::from_str_radix(&s[2..3], 16).ok()? * 17;
+            let a = u8::from_str_radix(&s[3..4], 16).ok()? * 17;
+            Some(Color::from_rgba8(r, g, b, a as f32 / 255.0))
+        }
+        6 => {
+            // #RRGGBB
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            Some(Color::from_rgb8(r, g, b))
+        }
+        8 => {
+            // #RRGGBBAA
+            let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+            let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+            Some(Color::from_rgba8(r, g, b, a as f32 / 255.0))
+        }
+        _ => None,
+    }
+}
+
+/// Custom palette configuration
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct CustomPalette {
+    pub background: Option<String>,
+    pub text: Option<String>,
+    pub primary: Option<String>,
+    pub success: Option<String>,
+    pub danger: Option<String>,
+    pub warning: Option<String>,
+}
+
+impl CustomPalette {
+    pub fn to_iced_palette(&self) -> Option<iced::theme::Palette> {
+        // All colors must be specified for a custom palette
+        Some(iced::theme::Palette {
+            background: parse_hex_color(self.background.as_ref()?)?,
+            text: parse_hex_color(self.text.as_ref()?)?,
+            primary: parse_hex_color(self.primary.as_ref()?)?,
+            success: parse_hex_color(self.success.as_ref()?)?,
+            danger: parse_hex_color(self.danger.as_ref()?)?,
+            warning: parse_hex_color(self.warning.as_ref()?)?,
+        })
+    }
+}
 
 macro_rules! make_config {
-    ($name:ident { $($field:ident : $type:ty $( = ($default:expr) $field_str:literal )? $( [$serde_opts:expr])? ),* }) => {
+    ($name:ident { $($field:ident : $type:ty $( = ($default:expr) $field_str:literal )? ),* }) => {
         #[derive(Deserialize, Debug)]
         pub struct $name { $(
             #[serde( $(default = $field_str )? )]
-            $(#[serde($serde_opts)])?
             pub $field: $type,
         )* }
         $( $( fn $field() -> $type { $default } )? )*
@@ -44,17 +107,44 @@ pub enum Field {
     Commandline,
 }
 
-// not sure how to avoid having to specify the name twice
+#[derive(Deserialize, Debug, Clone, Default, EnumString, Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum ThemeName {
+    Light,
+    Dark,
+    Dracula,
+    Nord,
+    SolarizedLight,
+    SolarizedDark,
+    GruvboxLight,
+    GruvboxDark,
+    CatppuccinLatte,
+    #[default]
+    CatppuccinFrappe,
+    CatppuccinMacchiato,
+    CatppuccinMocha,
+    TokyoNight,
+    TokyoNightStorm,
+    TokyoNightLight,
+    KanagawaWave,
+    KanagawaDragon,
+    KanagawaLotus,
+    Moonfly,
+    Nightfly,
+    Oxocarbon,
+    Ferra,
+}
+
 make_config!(Config {
-    markup_default: Vec<Attribute> = (Vec::new()) "markup_default" [deserialize_with = "deserialize_markup"],
-    markup_highlight: Vec<Attribute> = (parse_attributes("foreground=\"red\" underline=\"double\"").unwrap()) "markup_highlight" [deserialize_with = "deserialize_markup"],
-    markup_extra: Vec<Attribute> = (parse_attributes("font_style=\"italic\" font_size=\"smaller\"").unwrap()) "markup_extra" [deserialize_with = "deserialize_markup"],
+    app_theme: ThemeName = (ThemeName::default()) "app_theme",
+    custom_palette: CustomPalette = (CustomPalette::default()) "custom_palette",
+    locale: Option<Locale> = (None) "locale",
     exclusive: bool = (true) "exclusive",
     frequent_first: bool = (false) "frequent_first",
     recent_first: bool = (true) "recent_first",
     prune_history: u32 = (0) "prune_history",
     icon_size: i32 = (64) "icon_size",
-    lines: i32 = (2) "lines",
     margin_left: i32 = (0) "margin_left",
     margin_right: i32 = (0) "margin_right",
     margin_top: i32 = (0) "margin_top",
@@ -73,17 +163,8 @@ make_config!(Config {
     cgroups: bool = (true) "cgroups",
     command_prefix: String = (":".into()) "command_prefix",
     exclude: Vec<String> = (Vec::new()) "exclude",
-    term_command: Option<String> = (None) "term_command",
-    close_on_unfocus: bool = (true) "close_on_unfocus"
+    term_command: Option<String> = (None) "term_command"
 });
-
-fn deserialize_markup<'de, D>(deserializer: D) -> Result<Vec<Attribute>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: &str = serde::Deserialize::deserialize(deserializer)?;
-    parse_attributes(s).map_err(D::Error::custom)
-}
 
 impl Config {
     pub fn load() -> Config {
@@ -91,14 +172,7 @@ impl Config {
             Some(file) => std::fs::read_to_string(file).expect("Cannot read config"),
             _ => "".to_owned(),
         };
-        let config: Config = toml::from_str(&config_str).expect("Cannot parse config: {}");
+        let config: Config = toml::from_str(&config_str).expect("Cannot parse config");
         config
     }
-}
-
-fn parse_attributes(markup: &str) -> Result<Vec<Attribute>, String> {
-    let (attributes, _, _) = pango::parse_markup(&format!("<span {}>X</span>", markup), '\0')
-        .map_err(|err| format!("Failed to parse markup: {}", err))?;
-    let mut iter = attributes.iterator().ok_or("Failed to parse markup")?;
-    Ok(iter.attrs())
 }
