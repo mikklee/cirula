@@ -34,4 +34,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 strum = { version = "0.27", features = ["derive"] }
 
 [profile.release]
+# Link-Time Optimization: reduces binary size and improves performance at the cost of longer compile times
 lto = true
