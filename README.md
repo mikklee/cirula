@@ -16,7 +16,7 @@ I have not thoroughly tested every option yet. The main goal was to have a worki
 
 ## Examples
 
-Coming soon! This is still Work in progress! Though, it's mostly the same minus the CSS. Colours/transparency can be controlled with the `app_theme`/`custom_palette` settings in the `config.toml` file.
+Coming soon! This is still Work in progress! Though, it's mostly the same minus the CSS. Colours/transparency can be controlled with the `app_theme`/`custom_palette` settings in the `~/.config/cirula/config.toml` file.
 
 ## Building
 
@@ -27,13 +27,14 @@ Coming soon! This is still Work in progress! Though, it's mostly the same minus 
 
 ## Configuration
 
-Use `config.toml` your `.config/sirula` directory.
+Use `config.toml` (`~/.config/cirula/config.toml`).
 See `sample-config` for documentation.
 
 ## Built-in themes
 
 You can set the theme in the config.toml file (snake-case):
 
+### Example
 ```toml
 app_theme: tokyo_night_storm
 ```
@@ -67,6 +68,7 @@ app_theme: tokyo_night_storm
 
 You can also set a custom colour palette, including transparency.
 
+### Example 'Cyberpunk/Synthwave palette'
 ```toml
 [custom_palette]
 background = "#14141f"
